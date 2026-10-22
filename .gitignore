@@ -1,0 +1,2 @@
+# Local secret files used with `docker build --secret`
+secret.txt
