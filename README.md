@@ -14,25 +14,29 @@ RUN --mount=type=secret,id=BUILD_SECRET,required=true \
 
 - The secret is available at `/run/secrets/BUILD_SECRET` during that step only. It is never written to a layer.
 - The `test -s` check (with `required=true`) makes the build fail if the secret isn't provided or is empty.
-- The app stores only the secret's SHA-256 and serves it at `/`. You can check which value the build used without exposing it.
+- The image keeps only the secret's SHA-256. At runtime the app compares it with the `EXPECTED_SHA256` variable you set and answers `Build secret check: matched` or `not matched`. It never shows the secret or its hash.
 
 ## Deploy it
 
+Use a throwaway test value for this sample, never a real secret.
+
 1. Create a web service from this repository. Set **Build method** to **Dockerfile**, and the port to `8080`.
-2. Open the service's **Settings** tab and go to **Variables**. Choose **Edit variables**, open the **Secrets** tab and use **Add variable** to add `BUILD_SECRET`. Set its scope to **Build only** (or **Build & runtime**). Secrets are **Runtime only** by default, and a runtime-only secret never reaches the build.
-3. Deploy. Then compare the hash the service returns with your value's hash:
+2. Open the service's **Settings** tab and go to **Variables**. Choose **Edit variables**, open the **Secrets** tab and use **Add variable** to add `BUILD_SECRET` with your test value. Set its scope to **Build only** (or **Build & runtime**). Secrets are **Runtime only** by default, and a runtime-only secret never reaches the build.
+3. On the **General** tab, add `EXPECTED_SHA256` with the SHA-256 of the same test value, scoped **Runtime only**:
 
    ```sh
-   printf %s "$BUILD_SECRET" | sha256sum
+   printf %s "my-test-value" | sha256sum
    ```
+
+4. Deploy. The service answers `Build secret check: matched` when the build received the secret.
 
 A secret whose scope includes the build is passed to a Dockerfile build as a BuildKit secret, with the variable's name as its `id`. Read it with `RUN --mount=type=secret,id=<NAME>`.
 
 ## Run it locally
 
 ```sh
-printf %s "my-test-value" > secret.txt
+printf %s "my-test-value" > secret.txt   # listed in .dockerignore, never part of the build context
 docker build --secret id=BUILD_SECRET,src=secret.txt -t build-secret-example .
-docker run --rm -p 8080:8080 build-secret-example
+docker run --rm -p 8080:8080 -e EXPECTED_SHA256="$(printf %s "my-test-value" | sha256sum | cut -d' ' -f1)" build-secret-example
 curl localhost:8080
 ```

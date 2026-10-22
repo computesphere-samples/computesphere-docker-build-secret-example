@@ -1,8 +1,12 @@
-// A web service that reports the SHA-256 of the build secret its image was
-// built with. The secret itself is never stored in the image.
+// A web service that checks the build secret its image was built with
+// against an expected value, without ever showing the secret or its hash.
+// The build writes only the secret's SHA-256 into the image; at runtime the
+// service compares it with EXPECTED_SHA256 and answers matched or not
+// matched.
 package main
 
 import (
+	"crypto/subtle"
 	"log"
 	"net/http"
 	"os"
@@ -14,10 +18,16 @@ func main() {
 	if err != nil {
 		log.Fatalf("read the build secret's hash: %v", err)
 	}
-	hash := strings.TrimSpace(string(sum))
+	built := strings.TrimSpace(string(sum))
+	expected := strings.ToLower(strings.TrimSpace(os.Getenv("EXPECTED_SHA256")))
+
+	result := "not matched"
+	if expected != "" && subtle.ConstantTimeCompare([]byte(built), []byte(expected)) == 1 {
+		result = "matched"
+	}
 	http.HandleFunc("/", func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "text/plain")
-		_, _ = w.Write([]byte("build secret sha256: " + hash + "\n"))
+		_, _ = w.Write([]byte("Build secret check: " + result + "\n"))
 	})
 	port := os.Getenv("PORT")
 	if port == "" {
